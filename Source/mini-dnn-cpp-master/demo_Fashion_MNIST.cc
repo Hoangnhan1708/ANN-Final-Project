@@ -34,7 +34,7 @@ namespace config
   int currentVersion = 1;
   int startVersion = 2;
   int endVersion = 2;
-  bool runAllVersion = false;
+  int isTraining = 1;
   float forwardTime = 0;
 }
 
@@ -73,12 +73,12 @@ void loadNetworkParameters(Network& network, std::string filename) {
 }
 
 void testing(Network& dnn, MNIST& dataset, int epoch) {
-  startTimer();    
+  // startTimer();    
   dnn.forward(dataset.test_data);
-  std::cout << "Test time: " << stopTimer() << std::endl;
+  // std::cout << "Test time: " << stopTimer() << std::endl;
    
   float acc = compute_accuracy(dnn.output(), dataset.test_labels);
-  std::cout << "Test acc: " << acc << std::endl;
+  std::cout << "Accuracy: " << acc << std::endl;
   std::cout << std::endl;
 }
 
@@ -87,7 +87,7 @@ void testing(Network& dnn, MNIST& dataset, int epoch) {
 int main(int argc, char** argv) {
   config::startVersion = std::stoi(argv[1]);
   config::endVersion = std::stoi(argv[2]);
-  config::runAllVersion = std::stoi(argv[3]);
+  config::isTraining = std::stoi(argv[3]);
 
   // data
   MNIST dataset("../data/fashion-mnist/");
@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
   std::cout << "mnist train number: " << n_train << std::endl;
   std::cout << "mnist test number: " << dataset.test_labels.cols() << std::endl;
   // file to save parameters
-  std::string filename = "../../../Model/parameters_version1.txt";
+  // std::string filename = "../../../Model/parameters_version1.txt";
   
   // dnn
   Network dnn;
@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
   Loss* loss = new CrossEntropy;
   dnn.add_loss(loss);
   // train & test
-  SGD opt(0.001, 5e-4, 0.9, true);
+  SGD opt(0.0001, 5e-4, 0.9, true);
   // SGD opt(0.001);
   const int n_epoch = 5;
   const int batch_size = 128;
@@ -143,10 +143,11 @@ int main(int argc, char** argv) {
   //   createTestCasesForLayer(10, 6 * 12 * 12, 1, "../test/conv_2", C3);
   // }
 
-  if (!IS_TRAINING) {
+  if (config::isTraining == 0) {
     for (int v = config::startVersion; v <= config::endVersion; v++)
     {
       config::currentVersion = v;
+      std::string filename = "../../../Model/parameters_version_" + std::to_string(v) + ".txt";
       loadNetworkParameters(dnn, filename);
       std::cout << "\nCurrent version: " << config::currentVersion << "\n\n";
 
@@ -159,8 +160,8 @@ int main(int argc, char** argv) {
       testing(dnn, dataset, 0);
       std::cout << "------------------------------------------\n" << std::endl;
 
-      if (!config::runAllVersion)
-        break;
+      // if (!config::runAllVersion)
+      //   break;
     }
 
     return 0;
@@ -171,9 +172,11 @@ int main(int argc, char** argv) {
   for (int v = config::startVersion; v <= config::endVersion; v++)
   {
     config::currentVersion = v;
+    std::cout << "---------------------------Current Version "<< v << "----------------------------------\n";
     startTimer();
     for (int epoch = 0; epoch < n_epoch; epoch ++) 
     {
+      std::cout << "---------Epochs "<< epoch << "----------\n";
       shuffle_data(dataset.train_data, dataset.train_labels);
       for (int start_idx = 0; start_idx < n_train; start_idx += batch_size) 
       {

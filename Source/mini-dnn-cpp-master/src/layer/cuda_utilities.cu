@@ -110,58 +110,67 @@ __global__ void matrixMultiplicationKernel_1(float* A, float* B, float* C, int m
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
 
+    // Kiểm tra điều kiện biên
     if (row < m && col < k) {
-        float sum = 0.0f;
+        float val = 0.0f;
 
-        // Tính toán tích vô hướng của hàng A và cột B
+        // Tính tích vô hướng của hàng A và cột B
         for (int i = 0; i < n; i++) {
-            sum += A[row * n + i] * B[i * k + col];
+            val += A[row * n + i] * B[i * k + col];
         }
-		
+
         // Ghi kết quả vào ma trận C
-        C[row * k + col] = sum;
-		
+        C[row * k + col] = val;
     }
 }
+
+
 
 __global__ void matrixMultiplicationKernel_2(float* A, float* B, float* C, int m, int n, int k, int image)
 {
-	__shared__ float s_A[TILE_WIDTH][TILE_WIDTH];
-	__shared__ float s_B[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float tile_A[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float tile_B[TILE_WIDTH][TILE_WIDTH];
 
-    int numStride = (n - 1) / TILE_WIDTH + 1;
-    int tidY = blockIdx.y * blockDim.y + threadIdx.y;
-    int tidX = blockIdx.x * blockDim.x + threadIdx.x;
-    float sum = 0;
+    int row = threadIdx.y + blockIdx.y * TILE_WIDTH;
+    int col = threadIdx.x + blockIdx.x * TILE_WIDTH;
+    float val = 0.0f;
 
-    for (int stride = 0; stride < numStride; stride++)
-    {   
-        int globalAIdx = idx1D_col(tidY, stride * TILE_WIDTH + threadIdx.x, m);
-        int globalBIdx = idx1D_col(stride * TILE_WIDTH + threadIdx.y, tidX, n);
-
-        if (tidY < m && stride * TILE_WIDTH + threadIdx.x < n)
-            s_A[threadIdx.y][threadIdx.x] = A[globalAIdx];
-        else
-            s_A[threadIdx.y][threadIdx.x] = 0;
-
-        if ((stride * TILE_WIDTH + threadIdx.y) < n && tidX < k)
-            s_B[threadIdx.y][threadIdx.x] = B[globalBIdx];
-        else
-            s_B[threadIdx.y][threadIdx.x] = 0;
-
-        __syncthreads();
-        
-        for (int i = 0; i < TILE_WIDTH; i++)
-        {
-            sum += s_A[threadIdx.y][i] * s_B[i][threadIdx.x];
-			//if (tidY == 4 && tidX == 0 && image == 2) printf("s_A[%d][%d] = %f, s_B[%d][%d] = %f\n", threadIdx.y, i, s_A[threadIdx.y][i], i, threadIdx.x, s_B[i][threadIdx.x]);
+    // Duyệt qua các "tiled blocks" để thực hiện phép nhân ma trận
+    for (int i = 0; i < (n + TILE_WIDTH - 1) / TILE_WIDTH; i++)
+    {
+        // Nạp dữ liệu từ A vào shared memory tile_A
+        if (row < m && (i * TILE_WIDTH + threadIdx.x) < n) {
+            tile_A[threadIdx.y][threadIdx.x] = A[row * n + i * TILE_WIDTH + threadIdx.x];
+        } else {
+            tile_A[threadIdx.y][threadIdx.x] = 0.0f;
         }
-        // __syncthreads();
+
+        // Nạp dữ liệu từ B vào shared memory tile_B
+        if (col < k && (i * TILE_WIDTH + threadIdx.y) < n) {
+            tile_B[threadIdx.y][threadIdx.x] = B[(i * TILE_WIDTH + threadIdx.y) * k + col];
+        } else {
+            tile_B[threadIdx.y][threadIdx.x] = 0.0f;
+        }
+
+        // Đồng bộ hóa các thread trong block để đảm bảo mọi thread đã nạp xong dữ liệu vào shared memory
+        __syncthreads();
+
+        // Tính tích của tile_A và tile_B
+        for (int j = 0; j < TILE_WIDTH; j++) {
+            val += tile_A[threadIdx.y][j] * tile_B[j][threadIdx.x];
+        }
+
+        // Đồng bộ hóa các thread trong block trước khi tiếp tục lặp qua các tiles tiếp theo
+        __syncthreads();
     }
 
-    if ( (tidY < m) && (tidX < k)) 
-		C[idx1D_col(tidY, tidX, m)] = sum;
+    // Ghi giá trị tính được vào ma trận kết quả C
+    if (row < m && col < k) {
+        C[row * k + col] = val;
+    }
 }
+
+
 
 void matrixMultiplicationCPU(float* A, float *B, float *C, int m, int n, int k)
 {	
@@ -207,34 +216,76 @@ void unrollGPUWrapper(int C, int H, int W, int K, float* image, float* data_col)
 
 void matrixMultiplicationGPUWrapper(float* A, float *B, float *C, int m, int n, int k, int i, bool isOptimized)
 {	
-	
-	memset(C, 0, m * k * sizeof(float));
+    // Kích thước block và grid
+    dim3 blockSize(32, 32);
+    dim3 gridSize((k + blockSize.x - 1) / blockSize.x, (m + blockSize.y - 1) / blockSize.y);
 
-	dim3 blockSize(32, 32);
-	float *d_A, *d_B, *d_C;
-	const int size_A = m * n * sizeof(float);
-	const int size_B = n * k * sizeof(float);
-	const int size_C = m * k * sizeof(float);
-	CHECK(cudaMalloc(&d_A, size_A));
-	CHECK(cudaMalloc(&d_B, size_B));
-	CHECK(cudaMalloc(&d_C, size_C));
+    // Kích thước bộ nhớ
+    const int size_A = m * n * sizeof(float);
+    const int size_B = n * k * sizeof(float);
+    const int size_C = m * k * sizeof(float);
 
-	CHECK(cudaMemcpy(d_A, A, size_A, cudaMemcpyHostToDevice));
-	CHECK(cudaMemcpy(d_B, B, size_B, cudaMemcpyHostToDevice));
-	// CHECK(cudaMemcpy(d_C, C, size_C, cudaMemcpyHostToDevice));
+    // Cấp phát bộ nhớ trên GPU
+    float *d_A, *d_B, *d_C;
+    CHECK(cudaMalloc(&d_A, size_A));
+    CHECK(cudaMalloc(&d_B, size_B));
+    CHECK(cudaMalloc(&d_C, size_C));
 
-	dim3 gridSize( (k - 1)/(blockSize.x) + 1, ( m - 1)/(blockSize.y) + 1);
-	if (!isOptimized){
-		matrixMultiplicationKernel_1<<<gridSize, blockSize>>>(d_A, d_B, d_C, m, n, k, i);
-	}
-	else{
-		matrixMultiplicationKernel_2<<<gridSize, blockSize>>>(d_A, d_B, d_C, m, n, k, i);
-	}
-	CHECK(cudaGetLastError());
-	CHECK(cudaDeviceSynchronize());
-	CHECK(cudaMemcpy(C, d_C, size_C, cudaMemcpyDeviceToHost));
+    // Copy dữ liệu từ CPU sang GPU
+    CHECK(cudaMemcpy(d_A, A, size_A, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpy(d_B, B, size_B, cudaMemcpyHostToDevice));
 
-	CHECK(cudaFree(d_A));
-	CHECK(cudaFree(d_B));
-	CHECK(cudaFree(d_C));
+    // Gọi kernel
+    if (isOptimized == false) {
+        matrixMultiplicationKernel_1<<<gridSize, blockSize>>>(d_A, d_B, d_C, m, n, k, i);
+    } else {
+        matrixMultiplicationKernel_2<<<gridSize, blockSize>>>(d_A, d_B, d_C, m, n, k, i);
+    }
+    CHECK(cudaGetLastError());
+    
+    // Đồng bộ GPU để đảm bảo kernel hoàn thành
+    CHECK(cudaDeviceSynchronize());
+
+    // Copy kết quả từ GPU sang CPU
+    CHECK(cudaMemcpy(C, d_C, size_C, cudaMemcpyDeviceToHost));
+
+    // Giải phóng bộ nhớ GPU
+    CHECK(cudaFree(d_A));
+    CHECK(cudaFree(d_B));
+    CHECK(cudaFree(d_C));
 }
+
+
+// void matrixMultiplicationGPUWrapper(float* A, float *B, float *C, int m, int n, int k, int i, bool isOptimized)
+// {	
+	
+// 	memset(C, 0, m * k * sizeof(float));
+
+// 	dim3 blockSize(32, 32);
+// 	float *d_A, *d_B, *d_C;
+// 	const int size_A = m * n * sizeof(float);
+// 	const int size_B = n * k * sizeof(float);
+// 	const int size_C = m * k * sizeof(float);
+// 	CHECK(cudaMalloc(&d_A, size_A));
+// 	CHECK(cudaMalloc(&d_B, size_B));
+// 	CHECK(cudaMalloc(&d_C, size_C));
+
+// 	CHECK(cudaMemcpy(d_A, A, size_A, cudaMemcpyHostToDevice));
+// 	CHECK(cudaMemcpy(d_B, B, size_B, cudaMemcpyHostToDevice));
+// 	// CHECK(cudaMemcpy(d_C, C, size_C, cudaMemcpyHostToDevice));
+
+// 	dim3 gridSize( (k - 1)/(blockSize.x) + 1, ( m - 1)/(blockSize.y) + 1);
+// 	if (!isOptimized){
+// 		matrixMultiplicationKernel_1<<<gridSize, blockSize>>>(d_A, d_B, d_C, m, n, k, i);
+// 	}
+// 	else{
+// 		matrixMultiplicationKernel_2<<<gridSize, blockSize>>>(d_A, d_B, d_C, m, n, k, i);
+// 	}
+// 	CHECK(cudaGetLastError());
+// 	CHECK(cudaDeviceSynchronize());
+// 	CHECK(cudaMemcpy(C, d_C, size_C, cudaMemcpyDeviceToHost));
+
+// 	CHECK(cudaFree(d_A));
+// 	CHECK(cudaFree(d_B));
+// 	CHECK(cudaFree(d_C));
+// }

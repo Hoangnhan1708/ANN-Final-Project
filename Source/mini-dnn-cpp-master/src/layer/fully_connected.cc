@@ -195,7 +195,7 @@ void FullyConnected::backward(const Matrix& bottom, const Matrix& grad_top) {
 }
 
 // Library Version
-void FullyConnected::backwardVersion_1(const Matrix& bottom, const Matrix& grad_top) {
+void FullyConnected::backwardVersion_0(const Matrix& bottom, const Matrix& grad_top) {
   const int n_sample = bottom.cols();
   // d(L)/d(w') = d(L)/d(z) * x'
   // d(L)/d(b) = \sum{ d(L)/d(z_i) }
@@ -207,7 +207,7 @@ void FullyConnected::backwardVersion_1(const Matrix& bottom, const Matrix& grad_
 }
 
 // Sequential Version
-void FullyConnected::backwardVersion_0(const Matrix& bottom, const Matrix& grad_top) {
+void FullyConnected::backwardVersion_1(const Matrix& bottom, const Matrix& grad_top) {
   const int n_sample = bottom.cols();
 
   // Tính grad_weight = bottom * grad_top.transpose() sử dụng HostMatrixMultiplication

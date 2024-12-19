@@ -4,12 +4,8 @@
 #include <fstream>
 
 #include "src/layer.h"
-#include "src/layer/conv.h"
 #include "src/layer/fully_connected.h"
-#include "src/layer/ave_pooling.h"
-#include "src/layer/max_pooling.h"
 #include "src/layer/relu.h"
-#include "src/layer/sigmoid.h"
 #include "src/layer/softmax.h"
 #include "src/loss.h"
 #include "src/loss/mse_loss.h"

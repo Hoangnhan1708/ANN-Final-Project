@@ -82,6 +82,8 @@ void testing(Network& dnn, MNIST& dataset, int epoch) {
   std::cout << std::endl;
 }
 
+
+
 int main(int argc, char** argv) {
   config::startVersion = std::stoi(argv[1]);
   config::endVersion = std::stoi(argv[2]);
@@ -164,6 +166,8 @@ int main(int argc, char** argv) {
     return 0;
   }
 
+  Matrix previous_weight = dnn.get_weight_from_network();
+
   for (int v = config::startVersion; v <= config::endVersion; v++)
   {
     config::currentVersion = v;
@@ -197,6 +201,14 @@ int main(int argc, char** argv) {
         std::string fileParamaters = "../../../Model/parameters_version_" + std::to_string(v) + ".txt";
         saveNetworkParameters(dnn, fileParamaters);
       }
+      // Kiểm tra sự thay đổi trọng số sau mỗi epoch
+    Matrix current_weight = dnn.get_weight_from_network();
+    if ((current_weight - previous_weight).norm() == 0) {
+        std::cout << "Weights did not change in epoch " << epoch << std::endl;
+    } else {
+        std::cout << "Weights changed in epoch " << epoch << std::endl;
+    }
+    previous_weight = current_weight;
       // test
       testing(dnn, dataset, epoch);
     }

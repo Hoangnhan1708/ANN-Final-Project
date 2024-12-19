@@ -42,6 +42,7 @@ class Network {
   /// Debugging tool to check parameter gradients
   void check_gradient(const Matrix& input, const Matrix& target, int n_points,
                       int seed = -1);
+  Matrix get_weight_from_network();
 };
 
 #endif  // SRC_NETWORK_H_

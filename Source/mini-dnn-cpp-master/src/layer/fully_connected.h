@@ -34,6 +34,7 @@ class FullyConnected : public Layer {
   std::vector<float> get_parameters() const;
   std::vector<float> get_derivatives() const;
   void set_parameters(const std::vector<float>& param);
+  const Matrix& get_weight() const {return weight;}
 };
 
 #endif  // SRC_LAYER_FULLY_CONNECTED_H_

@@ -74,10 +74,48 @@ void FullyConnected::forwardVersion_2(const Matrix& bottom){
   Matrix result = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_C, dim_out, n_sample);
   top = result;
 
+  Matrix top_sequential = weight.transpose() * bottom;
+  top_sequential.colwise() += bias;
+
+  // So sánh top (GPU) với top_sequential (CPU)
+  float error = (top - top_sequential).norm();
+  std::cout << "Forward Version 2: Top ERROR: " << error << std::endl;
+
   // Giải phóng bộ nhớ
   free(h_bottom);
   free(h_C);
 }
+
+// void FullyConnected::forwardVersion_2(const Matrix& bottom){
+//   // z = w' * x + b
+//   const int n_sample = bottom.cols();
+//   top.resize(dim_out, n_sample);
+//   Matrix transposed_weight = weight.transpose();
+//   float* h_weight = (float*)malloc(transposed_weight.size() * sizeof(float));
+//   float* h_bottom = (float*)malloc(bottom.size() * sizeof(float));
+//   float* h_top = (float*)malloc(top.size() * sizeof(float));
+//   // Sao chép dữ liệu từ ma trận Eigen vào h_weight
+//   for (int i = 0; i < transposed_weight.size(); ++i) {
+//       h_weight[i] = transposed_weight.data()[i];
+//   }
+
+//   for (int i = 0; i < bottom.size(); ++i) {
+//       h_bottom[i] = bottom.data()[i];
+//   }
+
+//   matrixMultiplicationGPUWrapper(h_weight, h_bottom, h_top, dim_out, dim_in, n_sample, 0, false);
+//   for (int i = 0; i < top.size(); ++i) {
+//       top.data()[i] = h_top[i];
+//   }
+//   top.colwise() += bias;
+
+  
+
+//   free(h_weight);
+//   free(h_bottom);
+//   free(h_top);
+// }
+
 
 
 // Parallel Version (optimized)
@@ -110,12 +148,20 @@ void FullyConnected::forwardVersion_3(const Matrix& bottom){
   Matrix result = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_C, dim_out, n_sample);
   top = result;
 
+  Matrix top_sequential = weight.transpose() * bottom;
+  top_sequential.colwise() += bias;
+
+  // So sánh top (GPU) với top_sequential (CPU)
+  float error = (top - top_sequential).norm();
+  std::cout << "Forward Version 3: Top ERROR: " << error << std::endl;
+
   // Giải phóng bộ nhớ
   free(h_bottom);
   free(h_C);
 }
 
 void FullyConnected::backward(const Matrix& bottom, const Matrix& grad_top) {
+  // FullyConnected::backwardVersion_2(bottom, grad_top);
   switch (config::currentVersion)
   {
   case 1:
@@ -148,111 +194,127 @@ void FullyConnected::backwardVersion_1(const Matrix& bottom, const Matrix& grad_
 
 // Parallel Version (Not optimized)
 void FullyConnected::backwardVersion_2(const Matrix& bottom, const Matrix& grad_top) {
-  // std::cout << "đã vào FullyConnected::backwardVersion_2\n";
-  const int n_sample = bottom.cols();
+    const int n_sample = bottom.cols();
 
-  // Gradient trọng số: d(L)/d(w') = d(L)/d(z) * x'
-  float* h_grad_weight = (float*)calloc(dim_in * dim_out, sizeof(float));
-  float* h_bottom = (float*)malloc(dim_in * n_sample * sizeof(float)); // Dữ liệu đầu vào (x)
-  float* h_grad_top = (float*)malloc(dim_out * n_sample * sizeof(float)); // Gradient đầu ra (d(L)/d(z))
+    // Chuẩn bị bộ nhớ
+    float* h_bottom = (float*)malloc(dim_in * n_sample * sizeof(float));
+    float* h_grad_top = (float*)malloc(dim_out * n_sample * sizeof(float));
+    // float* h_grad_top_transpose = (float*)malloc(dim_out * n_sample * sizeof(float));
+    float* h_grad_weight = (float*)malloc(dim_in * dim_out * sizeof(float));
+    float* h_grad_bottom = (float*)malloc(dim_in * n_sample * sizeof(float));
 
-  for (int i = 0; i < n_sample; i++) {
-    // Trích xuất cột của bottom và grad_top
-    float* columnDataBottom = const_cast<float*>(bottom.col(i).data());
-    float* columnDataGradTop = const_cast<float*>(grad_top.col(i).data());
+    // Sao chép dữ liệu từ Eigen sang mảng liên tục
+    std::memcpy(h_bottom, bottom.data(), dim_in * n_sample * sizeof(float));
+    std::memcpy(h_grad_top, grad_top.data(), dim_out * n_sample * sizeof(float));
 
-    // Chuyển đổi dữ liệu cột sang hàng
-    Matrix columnMatrixBottom = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(columnDataBottom, dim_in, 1);
-    Matrix columnMatrixGradTop = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(columnDataGradTop, dim_out, 1);
-    std::memcpy(h_bottom + i * dim_in, columnMatrixBottom.data(), dim_in * sizeof(float));
-    std::memcpy(h_grad_top + i * dim_out, columnMatrixGradTop.data(), dim_out * sizeof(float));
+    // // Ánh xạ dữ liệu để tính transpose
+    // Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> mapped_transpose(
+    //     h_grad_top_transpose, n_sample, dim_out);
+    // mapped_transpose = grad_top.transpose();
 
-    // Tính gradient trọng số trên GPU
-    matrixMultiplicationGPUWrapper(h_bottom + i * dim_in, h_grad_top + i * dim_out, h_grad_weight,
-                                   dim_in, 1, dim_out, i, false);
-  }
+    // // std::cout << "---------------------------------------------\n";
+    // // 1. Tính grad_weight = bottom * grad_top.transpose()
+    // matrixMultiplicationGPUWrapper(h_bottom, h_grad_top_transpose, h_grad_weight, dim_in, n_sample, dim_out, 0, false);
 
-  grad_weight = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_weight, dim_in, dim_out);
 
-  // Gradient bias: d(L)/d(b) = \sum{d(L)/d(z_i)}
-  grad_bias.resize(dim_out, 1);
-  for (int i = 0; i < dim_out; ++i) {
-    grad_bias(i, 0) = grad_top.row(i).sum();
-  }
+    // grad_weight = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_weight, dim_in, dim_out);
+    
+    grad_weight = bottom * grad_top.transpose();
 
-  // Gradient đầu vào: d(L)/d(x) = w * d(L)/d(z)
-  float* h_grad_bottom = (float*)calloc(dim_in * n_sample, sizeof(float));
-  float* h_weight = weight.data(); // Trọng số (w)
+    // 2. Tính grad_bias = \sum(d(L)/d(z))
+    grad_bias.resize(dim_out, 1);
+    for (int i = 0; i < dim_out; ++i) {
+        grad_bias(i, 0) = grad_top.row(i).sum();
+    }
 
-  for (int i = 0; i < n_sample; i++) {
-    // Tính gradient đầu vào trên GPU
-    matrixMultiplicationGPUWrapper(h_weight, h_grad_top + i * dim_out, h_grad_bottom + i * dim_in,
-                                   dim_in, dim_out, 1, i, false);
-  }
+    // 3. Tính grad_bottom = weight * grad_top
+    matrixMultiplicationGPUWrapper(weight.data(), h_grad_top, h_grad_bottom, dim_in, dim_out, n_sample, 0, false);
 
-  grad_bottom.resize(dim_in, n_sample);
-  grad_bottom = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_bottom, dim_in, n_sample);
+    grad_bottom = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_bottom, dim_in, n_sample);
 
-  // 2. Giải phóng bộ nhớ
-  free(h_grad_weight);
-  free(h_grad_bottom);
-  free(h_bottom);
-  free(h_grad_top);
+    // Debug giá trị
+    Matrix grad_weight_sequential = bottom * grad_top.transpose();
+    Matrix grad_bias_sequential = grad_top.rowwise().sum();
+    Matrix grad_bottom_sequential = weight * grad_top;
+
+    float error_weight = (grad_weight - grad_weight_sequential).norm();
+    float error_bias = (grad_bias - grad_bias_sequential).norm();
+    float error_bottom = (grad_bottom - grad_bottom_sequential).norm();
+
+    std::cout << "Backward Version 2: Weight Error: " << error_weight << std::endl;
+    std::cout << "Backward Version 2: Bias Error: " << error_bias << std::endl;
+    std::cout << "Backward Version 2: Bottom Error: " << error_bottom << std::endl;
+
+    // Giải phóng bộ nhớ
+    free(h_bottom);
+    free(h_grad_top);
+    // free(h_grad_top_transpose);
+    free(h_grad_weight);
+    free(h_grad_bottom);
 }
+
+
 
 
 // Parallel Version (optimized)
 void FullyConnected::backwardVersion_3(const Matrix& bottom, const Matrix& grad_top) {
-  // std::cout << "đã vào FullyConnected::backwardVersion_2\n";
-  const int n_sample = bottom.cols();
+    const int n_sample = bottom.cols();
 
-  // Gradient trọng số: d(L)/d(w') = d(L)/d(z) * x'
-  float* h_grad_weight = (float*)calloc(dim_in * dim_out, sizeof(float));
-  float* h_bottom = (float*)malloc(dim_in * n_sample * sizeof(float)); // Dữ liệu đầu vào (x)
-  float* h_grad_top = (float*)malloc(dim_out * n_sample * sizeof(float)); // Gradient đầu ra (d(L)/d(z))
+    // Chuẩn bị bộ nhớ
+    float* h_bottom = (float*)malloc(dim_in * n_sample * sizeof(float));
+    float* h_grad_top = (float*)malloc(dim_out * n_sample * sizeof(float));
+    // float* h_grad_top_transpose = (float*)malloc(dim_out * n_sample * sizeof(float));
+    float* h_grad_weight = (float*)malloc(dim_in * dim_out * sizeof(float));
+    float* h_grad_bottom = (float*)malloc(dim_in * n_sample * sizeof(float));
 
-  for (int i = 0; i < n_sample; i++) {
-    // Trích xuất cột của bottom và grad_top
-    float* columnDataBottom = const_cast<float*>(bottom.col(i).data());
-    float* columnDataGradTop = const_cast<float*>(grad_top.col(i).data());
+    // Sao chép dữ liệu từ Eigen sang mảng liên tục
+    std::memcpy(h_bottom, bottom.data(), dim_in * n_sample * sizeof(float));
+    std::memcpy(h_grad_top, grad_top.data(), dim_out * n_sample * sizeof(float));
 
-    // Chuyển đổi dữ liệu cột sang hàng
-    Matrix columnMatrixBottom = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(columnDataBottom, dim_in, 1);
-    Matrix columnMatrixGradTop = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(columnDataGradTop, dim_out, 1);
-    std::memcpy(h_bottom + i * dim_in, columnMatrixBottom.data(), dim_in * sizeof(float));
-    std::memcpy(h_grad_top + i * dim_out, columnMatrixGradTop.data(), dim_out * sizeof(float));
+    // // Ánh xạ dữ liệu để tính transpose
+    // Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>> mapped_transpose(
+    //     h_grad_top_transpose, n_sample, dim_out);
+    // mapped_transpose = grad_top.transpose();
 
-    // Tính gradient trọng số trên GPU
-    matrixMultiplicationGPUWrapper(h_bottom + i * dim_in, h_grad_top + i * dim_out, h_grad_weight,
-                                   dim_in, 1, dim_out, i, true);
-  }
+    // // std::cout << "---------------------------------------------\n";
+    // // 1. Tính grad_weight = bottom * grad_top.transpose()
+    // matrixMultiplicationGPUWrapper(h_bottom, h_grad_top_transpose, h_grad_weight, dim_in, n_sample, dim_out, 0, false);
 
-  grad_weight = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_weight, dim_in, dim_out);
 
-  // Gradient bias: d(L)/d(b) = \sum{d(L)/d(z_i)}
-  grad_bias.resize(dim_out, 1);
-  for (int i = 0; i < dim_out; ++i) {
-    grad_bias(i, 0) = grad_top.row(i).sum();
-  }
+    // grad_weight = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_weight, dim_in, dim_out);
+    
+    grad_weight = bottom * grad_top.transpose();
 
-  // Gradient đầu vào: d(L)/d(x) = w * d(L)/d(z)
-  float* h_grad_bottom = (float*)calloc(dim_in * n_sample, sizeof(float));
-  float* h_weight = weight.data(); // Trọng số (w)
+    // 2. Tính grad_bias = \sum(d(L)/d(z))
+    grad_bias.resize(dim_out, 1);
+    for (int i = 0; i < dim_out; ++i) {
+        grad_bias(i, 0) = grad_top.row(i).sum();
+    }
 
-  for (int i = 0; i < n_sample; i++) {
-    // Tính gradient đầu vào trên GPU
-    matrixMultiplicationGPUWrapper(h_weight, h_grad_top + i * dim_out, h_grad_bottom + i * dim_in,
-                                   dim_in, dim_out, 1, i, true);
-  }
+    // 3. Tính grad_bottom = weight * grad_top
+    matrixMultiplicationGPUWrapper(weight.data(), h_grad_top, h_grad_bottom, dim_in, dim_out, n_sample, 0, true);
 
-  grad_bottom.resize(dim_in, n_sample);
-  grad_bottom = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_bottom, dim_in, n_sample);
+    grad_bottom = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_bottom, dim_in, n_sample);
 
-  // 2. Giải phóng bộ nhớ
-  free(h_grad_weight);
-  free(h_grad_bottom);
-  free(h_bottom);
-  free(h_grad_top);
+    // Debug giá trị
+    Matrix grad_weight_sequential = bottom * grad_top.transpose();
+    Matrix grad_bias_sequential = grad_top.rowwise().sum();
+    Matrix grad_bottom_sequential = weight * grad_top;
+
+    float error_weight = (grad_weight - grad_weight_sequential).norm();
+    float error_bias = (grad_bias - grad_bias_sequential).norm();
+    float error_bottom = (grad_bottom - grad_bottom_sequential).norm();
+
+    std::cout << "Backward Version 3: Weight Error: " << error_weight << std::endl;
+    std::cout << "Backward Version 3: Bias Error: " << error_bias << std::endl;
+    std::cout << "Backward Version 3: Bottom Error: " << error_bottom << std::endl;
+
+    // Giải phóng bộ nhớ
+    free(h_bottom);
+    free(h_grad_top);
+    // free(h_grad_top_transpose);
+    free(h_grad_weight);
+    free(h_grad_bottom);
 }
 
 

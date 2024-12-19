@@ -117,9 +117,10 @@ __global__ void matrixMultiplicationKernel_1(float* A, float* B, float* C, int m
         for (int i = 0; i < n; i++) {
             sum += A[row * n + i] * B[i * k + col];
         }
-
+		
         // Ghi kết quả vào ma trận C
         C[row * k + col] = sum;
+		
     }
 }
 
@@ -206,6 +207,7 @@ void unrollGPUWrapper(int C, int H, int W, int K, float* image, float* data_col)
 
 void matrixMultiplicationGPUWrapper(float* A, float *B, float *C, int m, int n, int k, int i, bool isOptimized)
 {	
+	
 	memset(C, 0, m * k * sizeof(float));
 
 	dim3 blockSize(32, 32);
@@ -219,7 +221,7 @@ void matrixMultiplicationGPUWrapper(float* A, float *B, float *C, int m, int n, 
 
 	CHECK(cudaMemcpy(d_A, A, size_A, cudaMemcpyHostToDevice));
 	CHECK(cudaMemcpy(d_B, B, size_B, cudaMemcpyHostToDevice));
-	CHECK(cudaMemcpy(d_C, C, size_C, cudaMemcpyHostToDevice));
+	// CHECK(cudaMemcpy(d_C, C, size_C, cudaMemcpyHostToDevice));
 
 	dim3 gridSize( (k - 1)/(blockSize.x) + 1, ( m - 1)/(blockSize.y) + 1);
 	if (!isOptimized){
@@ -229,7 +231,7 @@ void matrixMultiplicationGPUWrapper(float* A, float *B, float *C, int m, int n, 
 		matrixMultiplicationKernel_2<<<gridSize, blockSize>>>(d_A, d_B, d_C, m, n, k, i);
 	}
 	CHECK(cudaGetLastError());
-
+	CHECK(cudaDeviceSynchronize());
 	CHECK(cudaMemcpy(C, d_C, size_C, cudaMemcpyDeviceToHost));
 
 	CHECK(cudaFree(d_A));

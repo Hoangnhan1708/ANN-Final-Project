@@ -22,10 +22,12 @@ class FullyConnected : public Layer {
   { init(); }
 
   void forward(const Matrix& bottom);
+  void forwardVersion_0(const Matrix& bottom); // Library
   void forwardVersion_1(const Matrix& bottom); // Sequential
   void forwardVersion_2(const Matrix& bottom); // Parallel (Not optimized)
   void forwardVersion_3(const Matrix& bottom); // Parallel (Optimized)
   void backward(const Matrix& bottom, const Matrix& grad_top);
+  void backwardVersion_0(const Matrix& bottom, const Matrix& grad_top); // Library
   void backwardVersion_1(const Matrix& bottom, const Matrix& grad_top); // Sequential
   void backwardVersion_2(const Matrix& bottom, const Matrix& grad_top); // Parallel (Not optimized)
   void backwardVersion_3(const Matrix& bottom, const Matrix& grad_top); // Parallel (Optimized)

@@ -10,6 +10,28 @@ void FullyConnected::init() {
   set_normal_random(bias.data(), bias.size(), 0, 0.01);
 }
 
+Matrix HostMatrixMultiplication(const Matrix& A, const Matrix& B) {
+    // Kiểm tra kích thước hợp lệ
+    if (A.cols() != B.rows()) {
+        throw std::invalid_argument("Matrix dimensions do not match for multiplication");
+    }
+
+    // Khởi tạo ma trận kết quả với các giá trị 0
+    Matrix result = Matrix::Zero(A.rows(), B.cols());
+
+    // Tính toán nhân ma trận bằng vòng lặp
+    for (int i = 0; i < A.rows(); ++i) {        // Duyệt từng hàng của A
+        for (int j = 0; j < B.cols(); ++j) {    // Duyệt từng cột của B
+            float sum = 0.0f;                   // Khởi tạo tổng cho phần tử [i][j]
+            for (int k = 0; k < A.cols(); ++k) { // Tính tích vô hướng cho hàng i và cột j
+                sum += A(i, k) * B(k, j);
+            }
+            result(i, j) = sum;                 // Gán kết quả vào phần tử [i][j]
+        }
+    }
+
+    return result; // Trả về kết quả
+}
 
 void FullyConnected::forward(const Matrix& bottom) {
   // z = w' * x + b
@@ -19,6 +41,9 @@ void FullyConnected::forward(const Matrix& bottom) {
   // top.colwise() += bias;
   switch (config::currentVersion)
   {
+  case 0:
+    FullyConnected::forwardVersion_0(bottom);
+    break;
   case 1:
     FullyConnected::forwardVersion_1(bottom);
     break;
@@ -28,6 +53,7 @@ void FullyConnected::forward(const Matrix& bottom) {
   case 3:
     FullyConnected::forwardVersion_3(bottom);
     break;
+
   
   default:
     FullyConnected::forwardVersion_1(bottom);
@@ -35,14 +61,30 @@ void FullyConnected::forward(const Matrix& bottom) {
   }
 }
 
-// Sequential Version
-void FullyConnected::forwardVersion_1(const Matrix& bottom){
+
+
+// Library Version
+void FullyConnected::forwardVersion_0(const Matrix& bottom){
   // z = w' * x + b
   const int n_sample = bottom.cols();
   top.resize(dim_out, n_sample);
   top = weight.transpose() * bottom;
   top.colwise() += bias;
 }
+
+// Sequential Version
+void FullyConnected::forwardVersion_1(const Matrix& bottom){
+  // z = w' * x + b
+    const int n_sample = bottom.cols();
+    top.resize(dim_out, n_sample);
+
+    // Sử dụng HostMatrixMultiplication để tính toán nhân ma trận
+    top = HostMatrixMultiplication(weight.transpose(), bottom);
+
+    // Cộng bias vào mỗi cột của ma trận kết quả
+    top.colwise() += bias;
+}
+
 
 // Parallel Version (Not optimized)
 void FullyConnected::forwardVersion_2(const Matrix& bottom){
@@ -133,6 +175,9 @@ void FullyConnected::backward(const Matrix& bottom, const Matrix& grad_top) {
   // FullyConnected::backwardVersion_1(bottom, grad_top);
   switch (config::currentVersion)
   {
+  case 0:
+    FullyConnected::backwardVersion_0(bottom, grad_top);
+    break;
   case 1:
     FullyConnected::backwardVersion_1(bottom, grad_top);
     break;
@@ -149,7 +194,7 @@ void FullyConnected::backward(const Matrix& bottom, const Matrix& grad_top) {
   }
 }
 
-// Sequential Version
+// Library Version
 void FullyConnected::backwardVersion_1(const Matrix& bottom, const Matrix& grad_top) {
   const int n_sample = bottom.cols();
   // d(L)/d(w') = d(L)/d(z) * x'
@@ -160,6 +205,25 @@ void FullyConnected::backwardVersion_1(const Matrix& bottom, const Matrix& grad_
   grad_bottom.resize(dim_in, n_sample);
   grad_bottom = weight * grad_top;
 }
+
+// Sequential Version
+void FullyConnected::backwardVersion_0(const Matrix& bottom, const Matrix& grad_top) {
+  const int n_sample = bottom.cols();
+
+  // Tính grad_weight = bottom * grad_top.transpose() sử dụng HostMatrixMultiplication
+  grad_weight = HostMatrixMultiplication(bottom, grad_top.transpose());
+
+  // Tính grad_bias = \sum{ d(L)/d(z_i) }
+  grad_bias.resize(dim_out, 1);
+  for (int i = 0; i < dim_out; ++i) { // Duyệt từng hàng của grad_top
+      grad_bias(i, 0) = grad_top.row(i).sum(); // Tổng các giá trị trên hàng i
+  }
+
+  // Tính grad_bottom = weight * grad_top sử dụng HostMatrixMultiplication
+  grad_bottom = HostMatrixMultiplication(weight, grad_top);
+}
+
+
 
 // Parallel Version (Not optimized)
 void FullyConnected::backwardVersion_2(const Matrix& bottom, const Matrix& grad_top) {

@@ -72,12 +72,12 @@ void loadNetworkParameters(Network& network, std::string filename) {
   }
 }
 
-void testing(Network& dnn, MNIST& dataset, int epoch) {
+void testing(Network& ann, MNIST& dataset, int epoch) {
   // startTimer();    
-  dnn.forward(dataset.test_data);
+  ann.forward(dataset.test_data);
   // std::cout << "Test time: " << stopTimer() << std::endl;
    
-  float acc = compute_accuracy(dnn.output(), dataset.test_labels);
+  float acc = compute_accuracy(ann.output(), dataset.test_labels);
   std::cout << "Accuracy: " << acc << std::endl;
   std::cout << std::endl;
 }
@@ -99,37 +99,25 @@ int main(int argc, char** argv) {
   // file to save parameters
   // std::string filename = "../../../Model/parameters_version1.txt";
   
-  // dnn
-  Network dnn;
-  // Layer* C1 = new Conv(1, 28, 28, 6, 5, 5, 1);
-  // Layer* S2 = new MaxPooling(6, 24, 24, 2, 2, 2);
-  // Layer* C3 = new Conv(6, 12, 12, 16, 5, 5, 1);
-  // Layer* S4 = new MaxPooling(16, 8, 8, 2, 2, 2);
-  Layer* F6 = new FullyConnected(784, 128);
-  Layer* F7 = new FullyConnected(128, 128);
-  Layer* F8 = new FullyConnected(128, 10);
+  // ann
+  Network ann;
+  Layer* F1 = new FullyConnected(784, 128);
+  Layer* F2 = new FullyConnected(128, 128);
+  Layer* F3 = new FullyConnected(128, 10);
   Layer* relu1 = new ReLU;
   Layer* relu2 = new ReLU;
-  Layer* relu3 = new ReLU;
-  Layer* relu4 = new ReLU;
   Layer* softmax = new Softmax;
   
-  // dnn.add_layer(C1);
-  // dnn.add_layer(relu1);
-  // dnn.add_layer(S2);
-  // dnn.add_layer(C3);
-  // dnn.add_layer(relu2);
-  // dnn.add_layer(S4);
-  dnn.add_layer(F6);
-  dnn.add_layer(relu3);
-  dnn.add_layer(F7);
-  dnn.add_layer(relu4);
-  dnn.add_layer(F8);
-  dnn.add_layer(softmax);
+  ann.add_layer(F1);
+  ann.add_layer(relu1);
+  ann.add_layer(F2);
+  ann.add_layer(relu2);
+  ann.add_layer(F3);
+  ann.add_layer(softmax);
   
   // loss
   Loss* loss = new CrossEntropy;
-  dnn.add_loss(loss);
+  ann.add_loss(loss);
   // train & test
   SGD opt(0.0001, 5e-4, 0.9, true);
   // SGD opt(0.001);
@@ -138,7 +126,7 @@ int main(int argc, char** argv) {
 
   // if (IS_CREATING_TEST_CASES) {
   //   config::currentVersion = -1;
-  //   loadNetworkParameters(dnn, filename);
+  //   loadNetworkParameters(ann, filename);
   //   createTestCasesForLayer(10, 1 * 28 * 28, 1, "../test/conv_1", C1);
   //   createTestCasesForLayer(10, 6 * 12 * 12, 1, "../test/conv_2", C3);
   // }
@@ -148,7 +136,7 @@ int main(int argc, char** argv) {
     {
       config::currentVersion = v;
       std::string filename = "../../../Model/parameters_version_" + std::to_string(v) + ".txt";
-      loadNetworkParameters(dnn, filename);
+      loadNetworkParameters(ann, filename);
       std::cout << "\nCurrent version: " << config::currentVersion << "\n\n";
 
       // // Check if the implementation of forward of Conv layer is correct
@@ -157,7 +145,7 @@ int main(int argc, char** argv) {
       std::cout << "\n\n";
 
       // Run on the test set
-      testing(dnn, dataset, 0);
+      testing(ann, dataset, 0);
       std::cout << "------------------------------------------\n" << std::endl;
 
       // if (!config::runAllVersion)
@@ -188,26 +176,25 @@ int main(int argc, char** argv) {
         Matrix target_batch = one_hot_encode(label_batch, 10);
         if (false && ith_batch % 10 == 1) {
           std::cout << ith_batch << "-th grad: " << std::endl;
-          dnn.check_gradient(x_batch, target_batch, 10);
+          ann.check_gradient(x_batch, target_batch, 10);
         }
         
-        dnn.forward(x_batch);
+        ann.forward(x_batch);
 
-        dnn.backward(x_batch, target_batch);
+        ann.backward(x_batch, target_batch);
         // display
         if (ith_batch % 50 == 0) {
-          std::cout << ith_batch << "-th batch, loss: " << dnn.get_loss() << std::endl;
+          std::cout << ith_batch << "-th batch, loss: " << ann.get_loss() << std::endl;
         }
         // optimize
-        dnn.update(opt);
+        ann.update(opt);
         
         std::string fileParamaters = "../../../Model/parameters_version_" + std::to_string(v) + ".txt";
-        saveNetworkParameters(dnn, fileParamaters);
+        saveNetworkParameters(ann, fileParamaters);
       }
-      // Kiểm tra sự thay đổi trọng số sau mỗi epoch
     
       // test
-      testing(dnn, dataset, epoch);
+      testing(ann, dataset, epoch);
     }
     std::cout << "Train time: " << stopTimer() << std::endl;
   }

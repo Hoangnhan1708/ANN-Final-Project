@@ -35,10 +35,6 @@ Matrix HostMatrixMultiplication(const Matrix& A, const Matrix& B) {
 
 void FullyConnected::forward(const Matrix& bottom) {
   // z = w' * x + b
-  // const int n_sample = bottom.cols();
-  // top.resize(dim_out, n_sample);
-  // top = weight.transpose() * bottom;
-  // top.colwise() += bias;
   switch (config::currentVersion)
   {
   case 0:
@@ -116,13 +112,6 @@ void FullyConnected::forwardVersion_2(const Matrix& bottom){
   Matrix result = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_C, dim_out, n_sample);
   top = result;
 
-  // Matrix top_sequential = weight.transpose() * bottom;
-  // top_sequential.colwise() += bias;
-
-  // So sánh top (GPU) với top_sequential (CPU)
-  // float error = (top - top_sequential).norm();
-  // std::cout << "Forward Version 2: Top ERROR: " << error << std::endl;
-
   // Giải phóng bộ nhớ
   free(h_bottom);
   free(h_C);
@@ -159,20 +148,12 @@ void FullyConnected::forwardVersion_3(const Matrix& bottom){
   Matrix result = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_C, dim_out, n_sample);
   top = result;
 
-  // Matrix top_sequential = weight.transpose() * bottom;
-  // top_sequential.colwise() += bias;
-
-  // So sánh top (GPU) với top_sequential (CPU)
-  // float error = (top - top_sequential).norm();
-  // std::cout << "Forward Version 2: Top ERROR: " << error << std::endl;
-
   // Giải phóng bộ nhớ
   free(h_bottom);
   free(h_C);
 }
 
 void FullyConnected::backward(const Matrix& bottom, const Matrix& grad_top) {
-  // FullyConnected::backwardVersion_1(bottom, grad_top);
   switch (config::currentVersion)
   {
   case 0:
@@ -253,19 +234,6 @@ void FullyConnected::backwardVersion_2(const Matrix& bottom, const Matrix& grad_
     // Chuyển kết quả từ GPU về Eigen Matrix
     grad_bottom = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_bottom, dim_in, n_sample);
 
-    // Debug giá trị
-    // Matrix grad_weight_sequential = bottom * grad_top.transpose();
-    // Matrix grad_bias_sequential = grad_top.rowwise().sum();
-    // Matrix grad_bottom_sequential = weight * grad_top;
-
-    // float error_weight = (grad_weight - grad_weight_sequential).norm();
-    // float error_bias = (grad_bias - grad_bias_sequential).norm();
-    // float error_bottom = (grad_bottom - grad_bottom_sequential).norm();
-
-    // std::cout << "Backward Version 2: Weight Error: " << error_weight << std::endl;
-    // std::cout << "Backward Version 2: Bias Error: " << error_bias << std::endl;
-    // std::cout << "Backward Version 2: Bottom Error: " << error_bottom << std::endl;
-
     // Giải phóng bộ nhớ
     free(h_bottom);
     free(h_grad_top);
@@ -302,19 +270,6 @@ void FullyConnected::backwardVersion_3(const Matrix& bottom, const Matrix& grad_
 
     // Chuyển kết quả từ GPU về Eigen Matrix
     grad_bottom = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_bottom, dim_in, n_sample);
-
-    // Debug giá trị
-    // Matrix grad_weight_sequential = bottom * grad_top.transpose();
-    // Matrix grad_bias_sequential = grad_top.rowwise().sum();
-    // Matrix grad_bottom_sequential = weight * grad_top;
-
-    // float error_weight = (grad_weight - grad_weight_sequential).norm();
-    // float error_bias = (grad_bias - grad_bias_sequential).norm();
-    // float error_bottom = (grad_bottom - grad_bottom_sequential).norm();
-
-    // std::cout << "Backward Version 2: Weight Error: " << error_weight << std::endl;
-    // std::cout << "Backward Version 2: Bias Error: " << error_bias << std::endl;
-    // std::cout << "Backward Version 2: Bottom Error: " << error_bottom << std::endl;
 
     // Giải phóng bộ nhớ
     free(h_bottom);

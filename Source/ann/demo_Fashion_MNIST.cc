@@ -120,12 +120,6 @@ int main(int argc, char** argv) {
   const int n_epoch = 5;
   const int batch_size = 128;
 
-  // if (IS_CREATING_TEST_CASES) {
-  //   config::currentVersion = -1;
-  //   loadNetworkParameters(ann, filename);
-  //   createTestCasesForLayer(10, 1 * 28 * 28, 1, "../test/conv_1", C1);
-  //   createTestCasesForLayer(10, 6 * 12 * 12, 1, "../test/conv_2", C3);
-  // }
 
   if (config::isTraining == 0) {
     for (int v = config::startVersion; v <= config::endVersion; v++)
@@ -135,9 +129,6 @@ int main(int argc, char** argv) {
       loadNetworkParameters(ann, filename);
       std::cout << "\nCurrent version: " << config::currentVersion << "\n\n";
 
-      // // Check if the implementation of forward of Conv layer is correct
-      // runTestCasesForLayer(10, 1 * 28 * 28, 1, "../test/conv_1", C1);
-      // runTestCasesForLayer(10, 6 * 12 * 12, 1, "../test/conv_2", C3);
       std::cout << "\n\n";
 
       // Run on the test set

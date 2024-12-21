@@ -110,15 +110,6 @@ void FullyConnected::forwardVersion_2(const Matrix& bottom){
 
   // Chuyển kết quả từ GPU về Eigen Matrix
   Matrix result = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_C, dim_out, n_sample);
-  // So sánh với phiên bản 0 (tuần tự)
-    // Matrix top_sequential(dim_out, n_sample);
-    // top_sequential = weight.transpose() * bottom;
-    // top_sequential.colwise() += bias;
-
-    // // So sánh kết quả
-    // float error = (result - top_sequential).norm();
-    // std::cout << "Top Error: " << error << std::endl;
-
   top = result;
 
   // Giải phóng bộ nhớ
@@ -225,7 +216,6 @@ void FullyConnected::backwardVersion_2(const Matrix& bottom, const Matrix& grad_
     float* h_grad_top = (float*)malloc(dim_out * n_sample * sizeof(float));
     float* h_grad_bottom = (float*)malloc(dim_in * n_sample * sizeof(float));
 
-    // 1. Tính grad_weight bằng code tuần tự
     grad_weight = bottom * grad_top.transpose();
 
     // 2. Tính grad_bias = \sum(d(L)/d(z))
@@ -250,13 +240,6 @@ void FullyConnected::backwardVersion_2(const Matrix& bottom, const Matrix& grad_
 
     // Chuyển kết quả từ GPU về Eigen Matrix
     grad_bottom = Eigen::Map<Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>>(h_grad_bottom, dim_in, n_sample);
-
-    // // Tính toán grad_bottom tuần tự để so sánh
-    // Matrix grad_bottom_sequential = weight * grad_top;
-
-    // // So sánh kết quả giữa GPU và CPU
-    // float error = (grad_bottom - grad_bottom_sequential).norm();
-    // std::cout << "Bottom Error: " << error << std::endl;
 
     // Giải phóng bộ nhớ
     free(h_bottom);

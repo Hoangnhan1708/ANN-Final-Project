@@ -76,33 +76,6 @@ __host__ __device__ int idx1D_col(int r, int c, int rowSz) // Create two verisio
     return c * rowSz + r;
 }
 
-__global__ void unrollKernel_1(int C, int H, int W, int K, float* image, float* data_col)
-{
-	int c, s, h_out, w_out, h_unroll, w_unroll, w_base, p, q;
-	int t = blockIdx.x * blockDim.x + threadIdx.x;
-	int H_out = H - K + 1;
-	int W_out = W - K + 1;
-	int W_unroll = H_out * W_out;
-
-	if (t < C * W_unroll)
-	{
-		c = t / W_unroll;
-		s = t % W_unroll;
-		h_out = s / W_out;
-		w_out = s % W_out;
-		h_unroll = h_out * W_out + w_out;
-		w_base = c * (K * K);
-
-		for (p = 0; p < K; p++)
-		{
-			for (q = 0; q < K; q++)
-			{
-				w_unroll = w_base + p * K + q;
-				data_col[w_unroll * W_unroll + h_unroll] = image[c * H * W + (h_out + p) * W + (w_out + q)];
-			}
-		}
-	}
-}
 
 __global__ void matrixMultiplicationKernel_1(float* A, float* B, float* C, int m, int n, int k, int image)
 {
@@ -186,33 +159,6 @@ void matrixMultiplicationCPU(float* A, float *B, float *C, int m, int n, int k)
         }
 }
 
-void unrollGPUWrapper(int C, int H, int W, int K, float* image, float* data_col)
-{
-	int H_out = H - K + 1;
-	int W_out = W - K + 1;
-	int W_unroll = H_out * W_out;
-	int num_threads = C * H_out * W_out;
-	int block_size = 1024;
-	int num_blocks = ceil((float)num_threads / block_size);
-	
-	// Copy image to device
-	float* d_image;
-	CHECK(cudaMalloc(&d_image, C * H * W * sizeof(float)));
-	CHECK(cudaMemcpy(d_image, image, C * H * W * sizeof(float), cudaMemcpyHostToDevice));
-
-	// Copy data_col to device
-	float* d_data_col;
-	CHECK(cudaMalloc(&d_data_col, C * K * K * W_unroll * sizeof(float)));
-
-	unrollKernel_1<<<num_blocks, block_size>>>(C, H, W, K, d_image, d_data_col);
-	CHECK(cudaGetLastError());
-
-	// Copy data_col back to host
-	CHECK(cudaMemcpy(data_col, d_data_col, C * K * K * W_unroll * sizeof(float), cudaMemcpyDeviceToHost));
-	// Free memory
-	CHECK(cudaFree(d_image));
-	CHECK(cudaFree(d_data_col));
-}
 
 void matrixMultiplicationGPUWrapper(float* A, float *B, float *C, int m, int n, int k, int i, bool isOptimized)
 {	
@@ -256,36 +202,3 @@ void matrixMultiplicationGPUWrapper(float* A, float *B, float *C, int m, int n, 
 }
 
 
-// void matrixMultiplicationGPUWrapper(float* A, float *B, float *C, int m, int n, int k, int i, bool isOptimized)
-// {	
-	
-// 	memset(C, 0, m * k * sizeof(float));
-
-// 	dim3 blockSize(32, 32);
-// 	float *d_A, *d_B, *d_C;
-// 	const int size_A = m * n * sizeof(float);
-// 	const int size_B = n * k * sizeof(float);
-// 	const int size_C = m * k * sizeof(float);
-// 	CHECK(cudaMalloc(&d_A, size_A));
-// 	CHECK(cudaMalloc(&d_B, size_B));
-// 	CHECK(cudaMalloc(&d_C, size_C));
-
-// 	CHECK(cudaMemcpy(d_A, A, size_A, cudaMemcpyHostToDevice));
-// 	CHECK(cudaMemcpy(d_B, B, size_B, cudaMemcpyHostToDevice));
-// 	// CHECK(cudaMemcpy(d_C, C, size_C, cudaMemcpyHostToDevice));
-
-// 	dim3 gridSize( (k - 1)/(blockSize.x) + 1, ( m - 1)/(blockSize.y) + 1);
-// 	if (!isOptimized){
-// 		matrixMultiplicationKernel_1<<<gridSize, blockSize>>>(d_A, d_B, d_C, m, n, k, i);
-// 	}
-// 	else{
-// 		matrixMultiplicationKernel_2<<<gridSize, blockSize>>>(d_A, d_B, d_C, m, n, k, i);
-// 	}
-// 	CHECK(cudaGetLastError());
-// 	CHECK(cudaDeviceSynchronize());
-// 	CHECK(cudaMemcpy(C, d_C, size_C, cudaMemcpyDeviceToHost));
-
-// 	CHECK(cudaFree(d_A));
-// 	CHECK(cudaFree(d_B));
-// 	CHECK(cudaFree(d_C));
-// }
